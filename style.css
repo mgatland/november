@@ -1,0 +1,39 @@
+@font-face {
+	font-family: "uni 05_53";
+	src: url("./uni0553-webfont.woff");
+}
+
+html, body { 
+  margin: 0; 
+	width:  100%;
+	height: 100%;
+	font-family: "uni 05_53";
+	color: white;
+}
+
+body {
+	background-color: black;
+	display:flex;
+	align-items: center;
+	flex-direction: column;
+}
+
+.gameCanvas {
+	display:block;
+	background-color: #ccc;
+	height: 100%;
+	margin: auto;
+	image-rendering: crisp-edges;
+}
+
+
+@media screen and (max-aspect-ratio: 16/9) {
+	.gameCanvas {
+		height: auto;
+		width:100%;
+	}
+}
+
+.hidden {
+  display: none;
+}
