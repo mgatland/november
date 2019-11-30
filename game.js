@@ -5,10 +5,11 @@ import { editor } from './editor.js'
 import { playSound } from './sounds.js'
 let audioInitialized = false
 
-const smallSprite = 24
+const smallSprite = 8
 const fontSize = 24
 const lineHeight = 32
 const blankLineCharDelay = 130
+let wisdom = -1
 
 class Player {
   constructor (x, y) {
@@ -20,33 +21,33 @@ class Player {
     this.trail = []
     this.megaBird = false
     this.fireTimer = 0
-    this.refireRate = 6
+    this.refireRate = 20
     this.ammo = 0
     this.maxAmmo = 100
     this.health = 0
-    this.maxHealth = 100
+    this.maxHealth = 30
     this.ammo = this.maxAmmo
     this.health = this.maxHealth
   }
 }
 
 const particleTypes = {
-  playerDeadPuff: { maxAge: 300, sprite: smallSprite + 4 },
-  playerDeadRing: { maxAge: 1, sprite: smallSprite + 4, spawns: [{ type: 'playerDeadPuff', amount: 13, force: 0.75 }, { type: 'playerDeadPuff', amount: 19, force: 0.3 }] },
-  expPuff: { maxAge: 14, sprite: smallSprite + 5 },
-  expRing: { maxAge: 1, sprite: smallSprite + 5, spawns: [{ type: 'expPuff', amount: 6, force: 1 }] },
-  spawnerDeadPuff1: { maxAge: 30, sprite: smallSprite + 7 },
-  spawnerDeadPuff2: { maxAge: 90, sprite: smallSprite + 11 },
-  spawnerDeadRing: { maxAge: 1, sprite: smallSprite + 7, spawns: [{ type: 'spawnerDeadPuff1', amount: 7, force: 1.5 }, { type: 'spawnerDeadPuff1', amount: 5, force: 1 }, { type: 'spawnerDeadPuff2', amount: 11, force: 0.5 }] },
-  enemyDeadPuff1: { maxAge: 25, sprite: smallSprite + 7 },
-  enemyDeadPuff2: { maxAge: 30, sprite: smallSprite + 11 },
-  enemyDeadRing: { maxAge: 1, sprite: smallSprite + 7, spawns: [{ type: 'enemyDeadPuff1', amount: 7, force: 1.5 }, { type: 'enemyDeadPuff2', amount: 11, force: 0.5 }] }
+  playerDeadPuff: { maxAge: 300, sprite: smallSprite + 2 },
+  playerDeadRing: { maxAge: 1, sprite: smallSprite + 2, spawns: [{ type: 'playerDeadPuff', amount: 6, force: 0.75 }, { type: 'playerDeadPuff', amount: 4, force: 0.3 }] },
+  expPuff: { maxAge: 14, sprite: smallSprite + 2 },
+  expRing: { maxAge: 1, sprite: smallSprite + 2, spawns: [{ type: 'expPuff', amount: 4, force: 0.2 }] },
+  spawnerDeadPuff1: { maxAge: 30, sprite: smallSprite + 2 },
+  spawnerDeadPuff2: { maxAge: 90, sprite: smallSprite + 2 },
+  signDeadRing: { maxAge: 1, sprite: smallSprite + 2, spawns: [{ type: 'spawnerDeadPuff1', amount: 8, force: 0.5 }, { type: 'spawnerDeadPuff2', amount: 5, force: 0.3 }] },
+  enemyDeadPuff1: { maxAge: 25, sprite: smallSprite + 2 },
+  enemyDeadPuff2: { maxAge: 30, sprite: smallSprite + 2 },
+  enemyDeadRing: { maxAge: 1, sprite: smallSprite + 2, spawns: [{ type: 'enemyDeadPuff1', amount: 4, force: 1.5 }, { type: 'enemyDeadPuff2', amount: 11, force: 0.5 }] }
 }
 
 let debugMode = false
 window.editMode = false
 
-const storageKey = 'temp'
+const storageKey = 'antipatreon-november'
 
 let frame = 0
 let netState = {}
@@ -73,9 +74,9 @@ class Enemy {
     this.moveTimer = 0
     this.maxMoveTimer = 90
     this.fireSequence = frame % 16
-    this.health = 30
-    this.maxHealth = 30
-    this.sprite = 2
+    this.health = 1
+    this.maxHealth = 1
+    this.sprite = 3
     this.deadEffect = 'enemyDeadRing'
     this.hurtsOnTouch = true
   }
@@ -83,7 +84,7 @@ class Enemy {
     if (this.fireTimer > 0) this.fireTimer--
     if (this.fireTimer === 0 && this.refireRate > 0) {
       spawnShot(this)
-      playSound('enemyshoot')
+      // playSound('enemyshoot')
       this.fireTimer = this.refireRate
     }
     if (!player.dead && this.hurtsOnTouch && isTouching(this, player)) {
@@ -120,7 +121,7 @@ class OhSpawner extends Enemy {
     this.spawnTimer = this.maxSpawnTimer
     this.health = 200
     this.maxHealth = 200
-    this.deadEffect = 'spawnerDeadRing'
+    this.deadEffect = 'signDeadRing'
     this.baseSprite = 3
     this.hurtsOnTouch = false
     this.spawnerId = spawnerId++
@@ -160,12 +161,13 @@ class BatSpawner extends OhSpawner {
 }
 
 class SignPost extends Enemy {
-  constructor (x, y) {
+  constructor (x, y, belowIndex) {
     super(x, y)
-    this.sprite = 17
+    this.sprite = 4
     this.hurtsOnTouch = false
     this.isSign = true
-    this.deadEffect = 'spawnerDeadRing'
+    this.deadEffect = 'signDeadRing'
+    this.belowIndex = belowIndex
   }
   move () {
     super.move()
@@ -179,6 +181,8 @@ class OhRing extends Enemy {
     this.fireMode = 'star'
     this.maxMoveTimer = 90
     this.trash = true
+    this.health = 10
+    this.maxHealth = 10
     this.fireTimer = this.refireRate / 2
   }
   move () {
@@ -238,7 +242,7 @@ const xAccel = 0.1
 const xDecel = 0.05
 
 const scale = 4
-const tileSize = 16
+const tileSize = 8
 let canvas
 let ctx
 let spriteImage
@@ -247,15 +251,19 @@ let savedMap = localStorage.getItem(storageKey)
 let world = savedMap ? JSON.parse(savedMap) : {}
 if (savedMap && false) {
   console.warn('Loading map from local storage. This is only for development use.')
-  console.log(savedMap)
 } else {
-  /* eslint-disable comma-spacing */
   world =
-  //{ 'width': 50, 'height': 50, 'map': [null,0,1,51,0,48,1,2,0,48,1,2,0,48,1,2,0,10,7,1,0,21,6,1,0,15,1,2,0,32,6,1,0,15,1,2,0,4,7,1,0,24,6,7,0,12,1,2,0,48,1,2,0,19,7,1,0,28,1,2,0,48,1,2,0,41,6,4,0,3,1,2,0,48,1,2,0,6,6,6,0,36,1,2,0,47,6,1,1,2,0,41,7,4,0,3,1,2,0,48,1,2,0,48,1,2,0,48,1,2,0,48,1,2,0,23,6,2,0,23,1,2,0,24,6,2,0,22,1,2,0,25,6,2,0,21,1,2,0,26,6,2,0,20,1,2,0,27,6,2,0,19,1,2,0,28,6,2,0,18,1,2,0,48,1,2,0,48,1,2,0,48,1,2,0,48,1,2,0,48,1,2,0,48,1,2,0,48,1,2,0,48,1,2,0,13,7,8,0,14,6,1,0,12,1,2,0,13,7,1,0,6,7,1,0,15,6,1,0,11,1,2,0,20,7,1,0,16,6,1,0,10,1,2,0,20,7,1,0,17,6,1,0,9,1,2,0,20,7,1,0,18,6,1,0,8,1,2,0,13,7,1,0,6,7,1,0,12,6,5,0,10,1,2,0,13,7,1,0,3,7,1,0,2,7,1,0,27,1,2,0,13,7,1,0,6,7,1,0,27,1,2,0,13,7,8,0,27,1,2,0,48,1,2,0,48,1,2,0,48,1,2,0,48,1,2,0,48,1,2,6,2,0,46,1,2,0,48,1,51,0,2] }
-  { 'width': 50, 'height': 50, 'map': [6,13,1,37,7,1,0,11,7,1,0,36,1,1,7,1,0,11,7,1,0,20,8,1,0,15,1,1,7,1,0,11,7,1,0,12,2,1,0,14,2,1,0,8,1,1,7,1,0,11,7,1,0,20,6,1,0,15,1,1,7,1,0,6,15,1,0,4,7,1,0,5,6,1,0,14,6,1,0,15,1,1,7,1,0,11,7,1,0,5,6,1,0,9,7,2,6,7,0,12,1,1,7,1,0,11,7,1,0,5,6,1,17,1,0,8,7,1,0,20,1,1,7,1,0,11,7,1,0,5,6,3,0,7,7,1,0,10,8,1,0,9,1,1,7,1,0,11,7,1,0,15,7,1,0,20,1,1,7,1,0,11,7,1,0,15,7,1,0,10,1,1,0,9,1,1,7,1,0,8,1,2,0,1,7,1,0,6,8,1,0,8,7,1,0,9,1,3,0,8,1,1,7,5,0,2,7,6,0,15,7,1,0,9,1,3,0,8,1,2,0,25,7,3,0,8,1,5,0,6,6,1,1,2,8,1,0,22,7,2,0,2,7,1,0,4,7,16,1,2,0,9,15,1,0,11,7,2,0,4,7,1,0,20,1,2,0,19,7,2,0,6,7,1,0,20,1,3,0,16,7,2,0,8,7,1,0,20,1,4,0,13,7,2,0,10,7,1,0,7,8,1,0,8,2,1,0,3,1,5,0,10,7,2,0,8,6,2,0,2,7,1,0,20,1,2,7,13,0,11,6,2,0,1,7,1,0,20,1,2,0,25,6,2,7,1,0,16,15,1,0,3,1,2,0,26,6,2,0,20,1,2,0,27,6,2,0,7,17,1,0,11,1,2,0,28,6,2,7,14,0,4,1,2,0,28,7,1,0,19,1,2,0,28,7,1,0,19,1,2,0,28,7,1,0,1,2,1,0,17,1,2,0,28,7,1,0,19,1,2,0,27,7,2,0,1,15,1,0,17,1,2,0,27,7,2,0,19,1,2,0,27,7,2,0,10,17,1,0,8,1,2,0,21,7,8,0,6,6,13,1,2,0,13,7,9,0,6,7,1,0,6,6,1,0,12,1,2,0,13,7,1,0,6,7,1,0,7,7,1,0,7,6,1,0,11,1,2,0,20,7,1,0,7,7,1,0,8,6,1,0,10,1,2,0,20,7,1,0,7,7,1,0,6,8,1,0,2,6,1,0,9,1,2,0,20,7,1,0,7,7,1,0,5,17,1,0,4,6,1,0,8,1,2,0,13,7,1,0,6,7,1,0,7,7,1,0,4,6,7,0,8,1,2,0,13,7,1,0,3,7,1,0,2,7,1,0,7,7,1,0,19,1,2,0,13,7,1,0,6,7,1,0,7,7,1,0,19,1,2,0,13,7,8,0,7,7,1,0,16,2,1,0,2,1,2,0,28,7,1,0,5,8,1,0,13,1,2,0,28,7,1,0,19,1,2,0,28,7,1,0,16,15,1,0,2,1,2,0,28,7,1,0,5,6,1,0,13,1,2,0,28,7,1,0,19,1,2,6,2,0,26,7,1,0,19,1,2,0,28,7,1,0,14,17,1,0,4,1,51,0,2]}
-  /* eslint-enable comma-spacing */
+  { 'width': 50, 'height': 50, 'map': [].fill(0, 0, 50 * 50)}
+  for (let i = 0; i < world.width * world.height; i++) {
+    world.map[i] = Math.floor(Math.random() * 2)
+    if (Math.random() > 0.97) {
+      world.map[i] = 2
+    } else if (Math.random() > 0.97) {
+      world.map[i] = 15 // sign
+    }
+  }
 }
-world.map = editor.rleDecode(world.map)
+//world.map = editor.rleDecode(world.map)
 
 function start () {
   canvas = document.querySelector('canvas')
@@ -337,6 +345,7 @@ function spawnExplosion (pos, type = 'expRing') {
 
 function hurt (ent, amount) {
   if (ent.health <= 0) return
+  if (ent.immunity > 0) return
   ent.health -= amount
   if (ent.health <= 0) {
     ent.health = 0
@@ -344,9 +353,13 @@ function hurt (ent, amount) {
     if (ent.isPlayer) {
       spawnExplosion(ent.pos, 'playerDeadRing')
       playSound('playerexp')
+      ent.immunity = 15
     } else {
       spawnExplosion(ent.pos, ent.deadEffect)
       playSound('exp2')
+      if (ent.isSign) {
+        wisdom++
+      }
     }
   }
   if (ent.isPlayer) {
@@ -360,16 +373,21 @@ function updateShots () {
     shot.pos.y += shot.vel.y
     shot.age++
 
-    if (shot.hurtsPlayer && isTouching(shot, player)) {
-      hurt(player, 10)
-      playSound('playerhit')
-      playSound('exp')
-      spawnExplosion(shot.pos)
-      shot.dead = true
-      continue
-    }
-
-    if (!shot.hurtsPlayer) {
+    if (shot.hurtsPlayer) {
+      if (isTouching(shot, player)) {
+        hurt(player, 10)
+        playSound('playerhit')
+        playSound('exp')
+        spawnExplosion(shot.pos)
+        shot.dead = true
+        continue
+      }
+      if (shot.age > 120) {
+        spawnExplosion(shot.pos)
+        shot.dead = true
+        continue
+      }
+    } else {
       for (const ent of ents) {
         if (isTouching(shot, ent)) {
           hurt(ent, 10)
@@ -379,18 +397,24 @@ function updateShots () {
           continue
         }
       }
-      if (shot.age > tileSize * 7 / Math.abs(shot.vel.x)) {
+      if (shot.age > tileSize * 3 / Math.abs(shot.vel.x)) {
         spawnExplosion(shot.pos)
         shot.dead = true
         continue
       }
     }
 
-    if (getCollidingTiles(shot.pos)) {
+    const collidingTile = getCollidingTiles(shot.pos)
+    if (collidingTile) {
       shot.dead = true
       spawnExplosion(shot.pos)
       if (!shot.hurtsPlayer) {
         playSound('hitwall')
+        const index = getIndexFromPixels(collidingTile.x, collidingTile.y)
+        console.log(collidingTile)
+        console.log(index)
+        world.map[index] = 0
+        ents.filter(ent => ent.belowIndex === index).forEach(ent => hurt(ent, 9999))
       }
     }
   }
@@ -400,9 +424,6 @@ function updateShots () {
 function updateEnts () {
   for (let ent of ents) {
     ent.move()
-    if (ent.trash && (distance(ent.pos, player.pos) > 240)) {
-      ent.dead = true
-    }
   }
   filterInPlace(ents, e => !e.dead)
 }
@@ -459,6 +480,7 @@ function draw () {
     drawEndCard()
     return
   }
+  ctx.fillStyle = "#4f0064"
   ctx.fillRect(0, 0, canvas.width, canvas.height)
 
   drawLevel()
@@ -482,12 +504,12 @@ function drawHUD () {
   const height = 60
   const backgroundColor = ctx.fillStyle
   ctx.fillRect(0, canvas.height - height - scale, canvas.width, scale)
-  ctx.fillStyle = '#757161'
+  ctx.fillStyle = '#000000'
   ctx.fillRect(0, canvas.height - height, canvas.width, height)
   ctx.fillStyle = backgroundColor
 
   function drawBar (current, max, isLeft, fullSprite, emptySprite) {
-    let x = tileSize * scale * 1.5 + (isLeft ? 0 : canvas.width / 2)
+    let x = 420
     let y = canvas.height - height / 2
     for (let i = 0; i < max / 10; i++) {
       const sprite = i < current / 10 ? fullSprite : emptySprite
@@ -496,16 +518,45 @@ function drawHUD () {
     }
   }
   // drawBar(player.ammo, player.maxAmmo, true, smallSprite, smallSprite + 1)
-  const sOffset = (player.healthBarFlashTimer > 0 && Math.floor(player.healthBarFlashTimer / 10) % 2 === 0) ? 8 : 2
+  const sOffset = (player.healthBarFlashTimer > 0 && Math.floor(player.healthBarFlashTimer / 10) % 2 === 0) ? 3 : 3
   drawBar(player.health, player.maxHealth, false, smallSprite + sOffset + 1, smallSprite + sOffset)
 
   // Goal text
   const signsLeft = ents.filter(s => s.isSign).length
-  const creaturesLeft = ents.length - signsLeft
   ctx.textAlign = 'left'
   ctx.textBaseline = 'bottom'
   const textHeight = canvas.height - (height / 2 - fontSize / 2)
-  ctx.fillText(`Evidence remaining: ${creaturesLeft} creatures, ${signsLeft} signs.`, tileSize * scale, textHeight)
+  ctx.fillText(`Wisdom found: ${initialSignpostCount - signsLeft} of ${initialSignpostCount}.`, tileSize * scale, textHeight)
+  
+  const wisdoms = [
+  `Be so good they can't ignore you`,
+  `Be a fountain, not a drain`,
+  `Confidence is silence`,
+  `All dreams can come true`,
+  `Believe in yourself and others will too`,
+  `What you seek is seeking you`,
+  `It's never too late to change`,
+  `Don't worry about failure`,
+  `Luck comes from hard work`,
+  `Every long journey starts with a small start`,
+  `Don't ask who will let me, ask who will stop me`,
+  `Live this day as if you were leaving tomorrow`,
+  `Life is a daring adventure`,
+  `Give your energy to solutions, not problems`,
+  `What we think about, we become`,
+  `Do more of what works and less of what doesn't`
+  ]
+  if (wisdom >= 0) {
+    const wisIndex = wisdom % wisdoms.length
+    ctx.fillText(wisdoms[wisIndex], 500, textHeight)
+  }
+
+  //hack: logic should not be here in the draw method
+  if (signsLeft === 0 && !player.winner) {
+    player.winner = true
+    player.winTimer = 0
+  }
+
 }
 
 function drawParticle (p) {
@@ -515,7 +566,7 @@ function drawParticle (p) {
 }
 
 function drawShot (s) {
-  drawSprite(s.hurtsPlayer ? smallSprite : smallSprite + 6, s.pos.x, s.pos.y)
+  drawSprite(s.hurtsPlayer ? smallSprite : smallSprite + 1, s.pos.x, s.pos.y)
 }
 
 function drawPlayer (player) {
@@ -524,7 +575,7 @@ function drawPlayer (player) {
   }
 
   if (!player.dead) {
-    let sprite = 5
+    let sprite = 2
     drawSprite(sprite, player.pos.x, player.pos.y, player.facingLeft)
     // ctx.strokeText(Math.floor(player.pos.x / tileSize) + ":" + Math.floor(player.pos.y / tileSize), 40, 40)
   }
@@ -543,8 +594,8 @@ function drawSprite (index, x, y, flipped = false, hud = false) {
   ctx.translate(x, y)
   if (flipped) ctx.scale(-1, 1)
 
-  let sX = (index % 8) * width
-  let sY = Math.floor(index / 8) * height
+  let sX = (index % 4) * width
+  let sY = Math.floor(index / 4) * height
 
   // hack for small sprites
   if (index >= smallSprite) {
@@ -552,7 +603,7 @@ function drawSprite (index, x, y, flipped = false, hud = false) {
     width /= 2
     height /= 2
     sX = smolIndex * width
-    sY = 48
+    sY = 16
   }
 
   ctx.drawImage(spriteImage,
@@ -627,7 +678,7 @@ function updatePlayer (player, isLocal) {
   if (player.dead) {
     if (isLocal) {
       player.deadTimer = player.deadTimer ? player.deadTimer + 1 : 1
-      if (player.deadTimer > 60 * 5) restart()
+      if (player.deadTimer > 60 * 3) resetPlayer()
     }
     return
   }
@@ -647,8 +698,21 @@ function updatePlayer (player, isLocal) {
     }
   }
 
+  if (player.immunity > 0) {
+    player.immunity--
+  }
+
   updatePlayerAxis(player, 'x', keys.right, keys.left, skyXVel)
   player.pos.x += player.vel.x
+
+  if (player.pos.x < 0) {
+    player.pos.x = 0
+    player.vel.x = 0
+  }
+  if (player.pos.x > world.width * tileSize) {
+    player.pos.x = world.width * tileSize
+    player.vel.x = 0
+  }
 
   const collidingTile = getCollidingTiles(player.pos)
   if (collidingTile !== null) {
@@ -656,12 +720,25 @@ function updatePlayer (player, isLocal) {
     const clearTileIndex = getIndexFromPixels(collidingTile.x, collidingTile.y) +
       (player.vel.x < 0 ? 1 : -1) // move player one tile left or right
     const { x: clearX } = getPixelsFromIndex(clearTileIndex)
-    player.pos.x = clearX + tileSize / 2
+    player.pos.x = clearX + tileSize / 2 * (player.vel.x < 0 ? 0.801 : 1.2)
     player.vel.x = 0
   }
 
-  updatePlayerAxis(player, 'y', keys.down, keys.up, skyYVel)
+  // You can jump if
+  // 1. you are falling
+  // 2. you have ground under your feet
+  // This prevents a case where you step over the edge of a platform and immediately can jump again
+  console.log(isGrounded(player))
+  if (keys.up && isGrounded(player) && player.vel.y >= 0) {
+    player.vel.y = -2.2 // If we ever add slopes, we'd want to preserve vertical speed here sometimes.
+  }
+  player.vel.y += 0.1
   player.pos.y += player.vel.y
+
+  // falling out of the world
+  if (player.pos.y > (world.height + 10) * tileSize) {
+    player.pos.y = -10 * tileSize
+  }
 
   const collidingTileY = getCollidingTiles(player.pos)
   if (collidingTileY !== null) {
@@ -669,7 +746,7 @@ function updatePlayer (player, isLocal) {
     const clearTileIndex = getIndexFromPixels(collidingTileY.x, collidingTileY.y) +
       (player.vel.y < 0 ? world.width : -world.width) // move player one tile up or down
     const { y: clearY } = getPixelsFromIndex(clearTileIndex)
-    player.pos.y = clearY + tileSize / 2
+    player.pos.y = clearY + tileSize / 2 * (player.vel.y < 0 ? 0.801 : 1.2)
     player.vel.y = 0
   }
 
@@ -678,15 +755,6 @@ function updatePlayer (player, isLocal) {
   if (isLocal) {
     if (player.healthBarFlashTimer > 0) {
       player.healthBarFlashTimer--
-    }
-
-    if (player.winner) {
-      spawnExplosion(player.pos)
-    } else {
-      if (ents.length === 0 && !player.winner) {
-        player.winner = true
-        player.winTimer = 0
-      }
     }
 
     camera.pos.x = player.pos.x
@@ -711,24 +779,9 @@ function updatePlayer (player, isLocal) {
         player.health = player.maxHealth
         player.healthBarFlashTimer = 120
         playSound('heal')
-
-        /* // Did I win?
-        if (checkpoints.every(cp => player.checkpoints[cp.id])) {
-          console.log('you just won the game')
-          player.megaBird = true
-        } */
       }
     }
   }
-
-  /* if (player.megaBird && frame % 10 === 0) {
-    const p = { x: player.pos.x, y: player.pos.y, age: 0, type: 'firework0' }
-    const angle = (frame / 10) / 12 * Math.PI * 2
-    const force = 1.4
-    p.xVel = force * Math.cos(angle)
-    p.yVel = force * Math.sin(angle)
-    particles.push(p)
-  } */
 
   if (player.lostCoins) {
     player.checkpoints = {}
@@ -775,13 +828,13 @@ function spawnShot (ent) {
       pos: { x: ent.pos.x, y: ent.pos.y },
       vel: { x: 0, y: 0 }
     }
-    shot.vel.x = ent.facingLeft ? -8 : 8
+    shot.vel.x = ent.facingLeft ? -3 : 3
     shot.hurtsPlayer = false
     shot.age = 0
     shots.push(shot)
   }
   if (ent.fireMode === 'star') {
-    let points = 5
+    let points = 4
     const offset = (ent.fireSequence / 16) * Math.PI * 2 / points
     for (let i = 0; i < 5; i++) {
       const shot = {
@@ -789,7 +842,7 @@ function spawnShot (ent) {
         vel: { x: 0, y: 0 }
       }
       const angle = Math.PI * 2 / points * i + offset
-      const force = 1
+      const force = 0.5
       shot.vel.x = Math.cos(angle) * force
       shot.vel.y = Math.sin(angle) * force
       shot.hurtsPlayer = true
@@ -907,7 +960,7 @@ function isGrounded (ent) {
 
 function getCollidingTiles (pos) {
   const { x, y } = pos
-  const halfTile = tileSize / 2
+  const halfTile = tileSize / 2 * 0.8 // shrink entities!
   const tilesToCheck = [
     [ -halfTile, -halfTile, 'topLeft' ],
     [ halfTile - 0.001, -halfTile, 'topRight' ],
@@ -926,10 +979,19 @@ function getCollidingTiles (pos) {
   return null
 }
 
+let initialSignpostCount
+
+function resetPlayer () {
+  player = new Player(2 * tileSize, 2 * tileSize)
+  player.keys = keys 
+  initialSignpostCount = ents.filter(s => s.isSign).length
+}
+
 function restart () {
   frame = 0
   shots.length = 0
   ents.length = 0
+  initialSignpostCount = 0
   // netState
   player = new Player(2 * tileSize, 2 * tileSize)
   player.keys = keys
@@ -942,17 +1004,16 @@ function restart () {
       const x = (i % world.width) + 0.5
       const y = Math.floor(i / world.width) + 0.5
       const sprite = level[i]
-      if (sprite === 8) {
-        checkpoints.push({ id: cId++, x, y })
-      }
       if (sprite === 2) {
-        ents.push(new OhSpawner(x * tileSize, y * tileSize))
+        ents.push(new OhRing(x * tileSize, y * tileSize))
       }
       if (sprite === 15) {
-        ents.push(new BatSpawner(x * tileSize, y * tileSize))
-      }
-      if (sprite === 17) {
-        ents.push(new SignPost(x * tileSize, y * tileSize))
+        // signs must have a block underneath them
+        const below = i + world.width
+        if (level[below] === 1) {
+          ents.push(new SignPost(x * tileSize, y * tileSize, below))
+          initialSignpostCount++
+        }
       }
     }
   }
@@ -980,13 +1041,8 @@ function printCardTip (text) {
 
 function drawIntroCard () {
   const pos = cardSetup()
-  printLine(pos, `In my room, there is a desk.`)
-  printLine(pos, `On this desk is: `)
-  printLine(pos, ` - a bottle of herbal extracts`)
-  printLine(pos, ` - a map of Wraeclast`)
-  printLine(pos, ` - a pencil with the text 'write on!'`)
-  printLine(pos, ` - a plastic set square`)
-  printLine(pos, ` - a McDonalds Monopoly token representing Bow Street`)
+  printLine(pos, `COLLECT WISDOM`)
+  printLine(pos, `to win the game`)
   const hint = (pos.char > pos.charLimit) ? 'Press space bar to skip' : 'Press space bar'
   state.active = (pos.char > pos.charLimit)
   printCardTip(hint)
@@ -1005,25 +1061,11 @@ function drawCardBorder () {
 
 function drawEndCard () {
   const pos = cardSetup()
-  printLine(pos, `That's the last one. Let's go home.`)
-  printLine(pos)
-  printLine(pos, `...`, 'child')
-  printLine(pos); pos.y -= lineHeight * 2 // overwrite hacks
-  printLine(pos, `... Mum?`, 'child')
-  printLine(pos); pos.char -= blankLineCharDelay / 2 // Speed up this wait since there was so little text
-  printLine(pos, `Yes?`)
-  printLine(pos); pos.char -= blankLineCharDelay / 2 // Speed up this wait since there was so little text
-  printLine(pos, `Do you like cleaning factories?`, 'child')
-  printLine(pos)
-  printLine(pos, `...`)
-  printLine(pos); pos.y -= lineHeight * 2 // overwrite hacks
-  printLine(pos, `... well. It's not what I wanted to do when I was your age. But I like`)
-  printLine(pos, `having enough money to buy nice things, and send you to school. So`)
-  printLine(pos, `I guess I'm happy because my job gets us everything we need.`)
-  printLine(pos); pos.char += blankLineCharDelay * 2 // Slow down next line
-  printLine(pos, `I don't want to clean factories.`, 'child')
-  printLine(pos)
-  printLine(pos, `That's okay, honey. You can do something else.`)
+  printLine(pos, `You took all the wisdom`)
+  printLine(pos, ``)
+  printLine(pos, `Now you can leave this brain`)
+  printLine(pos, `and find a new one`)
+  printLine(pos, ``)
   pos.char += blankLineCharDelay * 2 // Extra delay before the end message
   state.active = (pos.char > pos.charLimit)
   if (!state.active) printCardTip('END')
